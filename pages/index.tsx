@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { connect } from 'mqtt/dist/mqtt';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { format } from 'date-fns';
-import styles from '@/styles/Home.module.css';
 
 interface SensorData {
   temperature: number;
@@ -68,7 +67,7 @@ export default function Home() {
   };
 
   return (
-    <main className={styles.main}>
+    <main className="min-h-screen bg-gray-100">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold">SHT31 Sensor Dashboard</h1>
