@@ -1,8 +1,8 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
+import { connect } from 'mqtt/dist/mqtt';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { Container, Paper, Typography, Grid, Alert, Box } from '@mui/material';
-import mqtt from 'mqtt';
 import { format } from 'date-fns';
+import styles from '@/styles/Home.module.css';
 
 interface SensorData {
   temperature: number;
@@ -10,175 +10,144 @@ interface SensorData {
   timestamp: string;
 }
 
-interface CurrentReadings {
-  temperature: number | null;
-  humidity: number | null;
-  lastUpdate: string | null;
-}
-
 export default function Home() {
-  const [data, setData] = useState<SensorData[]>([]);
-  const [current, setCurrent] = useState<CurrentReadings>({
-    temperature: null,
-    humidity: null,
-    lastUpdate: null
-  });
-  const [error, setError] = useState<string>('');
-  const [client, setClient] = useState<mqtt.MqttClient | null>(null);
+  const [sensorData, setSensorData] = useState<SensorData[]>([]);
+  const [currentData, setCurrentData] = useState<SensorData | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState('Connecting...');
 
-  const connectMqtt = useCallback(() => {
-    const mqttClient = mqtt.connect(process.env.NEXT_PUBLIC_MQTT_URL || '', {
-      username: process.env.NEXT_PUBLIC_MQTT_USERNAME,
-      password: process.env.NEXT_PUBLIC_MQTT_PASSWORD,
+  useEffect(() => {
+    // MQTT Client setup
+    const client = connect('wss://7d79ddcf8af4477491bd13dfe5fa8ba8.s1.eu.hivemq.cloud:8884/mqtt', {
+      username: 'admin',
+      password: 'Admin123',
       protocol: 'wss',
       rejectUnauthorized: false
     });
 
-    mqttClient.on('connect', () => {
-      console.log('Connected to HiveMQ');
-      mqttClient.subscribe('sensor/sht31');
-      setError('');
+    client.on('connect', () => {
+      setConnectionStatus('Connected');
+      client.subscribe('sensor/sht31');
     });
 
-    mqttClient.on('message', (topic, message) => {
+    client.on('message', (topic, message) => {
       try {
-        const sensorData = JSON.parse(message.toString());
-        const timestamp = new Date().toISOString();
-        const newReading = { ...sensorData, timestamp };
-
-        setData(prev => [...prev.slice(-50), newReading]);
-        setCurrent({
-          temperature: sensorData.temperature,
-          humidity: sensorData.humidity,
-          lastUpdate: timestamp
+        const data = JSON.parse(message.toString());
+        const newData = {
+          temperature: data.temperature,
+          humidity: data.humidity,
+          timestamp: new Date().toISOString()
+        };
+        
+        setCurrentData(newData);
+        setSensorData(prev => {
+          const newArray = [...prev, newData];
+          return newArray.slice(-50); // Keep last 50 readings
         });
-      } catch (e) {
-        console.error('Error parsing message:', e);
+      } catch (error) {
+        console.error('Error parsing message:', error);
       }
     });
 
-    mqttClient.on('error', (err) => {
-      setError('MQTT Error: ' + err.message);
+    client.on('error', (err) => {
+      console.error('MQTT Error:', err);
+      setConnectionStatus('Connection Error');
     });
 
-    mqttClient.on('offline', () => {
-      setError('MQTT Connection Lost - Attempting to reconnect...');
+    client.on('offline', () => {
+      setConnectionStatus('Offline - Reconnecting...');
     });
 
-    setClient(mqttClient);
-
-    return mqttClient;
-  }, []);
-
-  useEffect(() => {
-    const mqttClient = connectMqtt();
+    // Cleanup on unmount
     return () => {
-      mqttClient.end();
+      client.end();
     };
-  }, [connectMqtt]);
+  }, []);
 
   const formatTime = (timestamp: string) => {
     return format(new Date(timestamp), 'HH:mm:ss');
   };
 
   return (
-    <Container maxWidth="lg" className="py-8">
-      <Typography variant="h3" gutterBottom className="text-center mb-8">
-        SHT31 Sensor Dashboard
-      </Typography>
-      
-      {error && (
-        <Alert severity="error" className="mb-4">
-          {error}
-        </Alert>
-      )}
+    <main className={styles.main}>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold">SHT31 Sensor Dashboard</h1>
+          <p className="mt-2 text-gray-600">{connectionStatus}</p>
+        </div>
 
-      <Grid container spacing={4}>
         {/* Current Readings */}
-        <Grid item xs={12}>
-          <Paper elevation={3} className="p-4">
-            <Typography variant="h6" gutterBottom>
-              Current Readings
-            </Typography>
-            <Grid container spacing={2}>
-              <Grid item xs={12} md={4}>
-                <Box className="text-center">
-                  <Typography variant="h4" color="primary">
-                    {current.temperature?.toFixed(1)}°C
-                  </Typography>
-                  <Typography variant="subtitle1">Temperature</Typography>
-                </Box>
-              </Grid>
-              <Grid item xs={12} md={4}>
-                <Box className="text-center">
-                  <Typography variant="h4" color="secondary">
-                    {current.humidity?.toFixed(1)}%
-                  </Typography>
-                  <Typography variant="subtitle1">Humidity</Typography>
-                </Box>
-              </Grid>
-              <Grid item xs={12} md={4}>
-                <Box className="text-center">
-                  <Typography variant="body2" color="textSecondary">
-                    Last Update: {current.lastUpdate ? formatTime(current.lastUpdate) : 'N/A'}
-                  </Typography>
-                </Box>
-              </Grid>
-            </Grid>
-          </Paper>
-        </Grid>
+        <div className="bg-white rounded-lg shadow-lg p-6 mb-8">
+          <h2 className="text-xl font-semibold mb-4">Current Readings</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="text-center">
+              <p className="text-4xl font-bold text-blue-600">
+                {currentData?.temperature.toFixed(1)}°C
+              </p>
+              <p className="text-gray-600">Temperature</p>
+            </div>
+            <div className="text-center">
+              <p className="text-4xl font-bold text-green-600">
+                {currentData?.humidity.toFixed(1)}%
+              </p>
+              <p className="text-gray-600">Humidity</p>
+            </div>
+            <div className="text-center">
+              <p className="text-sm text-gray-500">
+                Last Update: {currentData ? formatTime(currentData.timestamp) : 'N/A'}
+              </p>
+            </div>
+          </div>
+        </div>
 
         {/* Charts */}
-        <Grid item xs={12} md={6}>
-          <Paper elevation={3} className="p-4">
-            <Typography variant="h6" gutterBottom>
-              Temperature History
-            </Typography>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={data}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis 
-                  dataKey="timestamp" 
-                  tickFormatter={formatTime}
-                />
-                <YAxis />
-                <Tooltip labelFormatter={formatTime} />
-                <Line
-                  type="monotone"
-                  dataKey="temperature"
-                  stroke="#2196f3"
-                  dot={false}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </Paper>
-        </Grid>
-        
-        <Grid item xs={12} md={6}>
-          <Paper elevation={3} className="p-4">
-            <Typography variant="h6" gutterBottom>
-              Humidity History
-            </Typography>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={data}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis 
-                  dataKey="timestamp" 
-                  tickFormatter={formatTime}
-                />
-                <YAxis />
-                <Tooltip labelFormatter={formatTime} />
-                <Line
-                  type="monotone"
-                  dataKey="humidity"
-                  stroke="#4caf50"
-                  dot={false}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </Paper>
-        </Grid>
-      </Grid>
-    </Container>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div className="bg-white rounded-lg shadow-lg p-6">
+            <h2 className="text-xl font-semibold mb-4">Temperature History</h2>
+            <div className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={sensorData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis 
+                    dataKey="timestamp" 
+                    tickFormatter={formatTime}
+                  />
+                  <YAxis />
+                  <Tooltip labelFormatter={formatTime} />
+                  <Line
+                    type="monotone"
+                    dataKey="temperature"
+                    stroke="#2563eb"
+                    dot={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow-lg p-6">
+            <h2 className="text-xl font-semibold mb-4">Humidity History</h2>
+            <div className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={sensorData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis 
+                    dataKey="timestamp" 
+                    tickFormatter={formatTime}
+                  />
+                  <YAxis />
+                  <Tooltip labelFormatter={formatTime} />
+                  <Line
+                    type="monotone"
+                    dataKey="humidity"
+                    stroke="#16a34a"
+                    dot={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
   );
 }
